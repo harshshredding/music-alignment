@@ -62,13 +62,13 @@ bach_test = {
 }
 
 def featurize(data,fs,f,patch_size,stride=512,normalize=False):
-    num_windows = len(data)/stride - patch_size/stride + 1
-    num_features = len(f(data,stride+patch_size/2,patch_size,normalize)[0])
+    num_windows = len(data)//stride - patch_size//stride + 1
+    num_features = len(f(data,stride+patch_size//2,patch_size,normalize)[0])
 
     rep = np.zeros((num_windows,num_features))
     # skip the last window (we will overflow if stride doesn't divide window size)
     for window in range(num_windows-1): 
-        L,R = f(data,stride*window+patch_size/2,patch_size,normalize)
+        L,R = f(data,stride*window+patch_size//2,patch_size,normalize)
         rep[window,:] = (L+R)/2.
 
     return rep.T
@@ -79,12 +79,12 @@ def load_data(handles,f,window=2048,stride=512,num_labels=128,mono=False):
     conn = psycopg2.connect("dbname={} user={}".format(database,user))
     cur = conn.cursor()
     for id in handles.keys():
-        print '+',
+        print('+', end=" ")
         fs, record = wavfile.read(handles[id])
         assert fs == 44100
         
         representation = featurize(record/16000.,fs,f,patch_size=window,stride=stride)
-	num_features = representation.shape[0]
+        num_features = representation.shape[0]
         representation = np.concatenate((representation,np.zeros((num_features,1*fs/stride))),axis=1) # pad out
         X.append(representation.T)
         
@@ -119,7 +119,7 @@ def load_labels(handles, num_labels=128, mono=False):
     conn = psycopg2.connect("dbname={} user={}".format(database,user))
     cur = conn.cursor()
     for id in handles.keys():
-        print '+',
+        print('+',end=" ")
         filename = handles[id]
         fs, record = wavfile.read(filename)
         assert fs == 44100
@@ -164,7 +164,7 @@ def sparse_labels(handles):
     for id in handles.keys():
         labels = IntervalTree()
         
-        print '+',
+        print('+',end=" ")
         filename = handles[id]
         fs, record = wavfile.read(filename)
         assert fs == 44100            # 44kHz

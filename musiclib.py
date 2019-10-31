@@ -153,13 +153,13 @@ def align_onsets(ground,observed, debug=False, status_updates=False):
 
     if status_updates:
         start = time.clock()
-        print '[----------]',
+        print('[----------]', end=" ")
         sys.stdout.flush()
 
     for j in range(0,len(ground)):
         if status_updates and 0 == j % (len(ground)/10):
             status = '+'*int(round(10*j / float(len(ground))))
-            print '\r[' + status.ljust(10,'-') + ']',
+            print('\r[' + status.ljust(10,'-') + ']', end=" ")
             sys.stdout.flush()
             
         for k in range(0,len(observed)):
@@ -188,7 +188,7 @@ def align_onsets(ground,observed, debug=False, status_updates=False):
 
                     if j > 2 and k > 2:
                         # mix in old tempos with exp decay
-                        if A[0][2] == 0: print A[0]
+                        if A[0][2] == 0: print(A[0])
                         T[j,k] = (T[j,k] + A[0][2]) / 2. # decay faster
                         #T[j,k] = .33*T[j,k] + .67*A[0][2] # decay slower
 
@@ -208,17 +208,17 @@ def align_onsets(ground,observed, debug=False, status_updates=False):
             
     if debug:
         display(Math('\\textbf{Score:}'))
-        print L.round(2)
+        print(L.round(2))
         display(Math('\\textbf{Path:}'))
-        print P
+        print(P)
         display(Math('\\textbf{Tempo:}'))
-        print T.round(2)
+        print(T.round(2))
         
     A = traceback(ground,observed,P,T,len(ground)-1,len(observed)-1,include_skips=True)
         
     if status_updates:
-        print '\r[++++++++++]'
-        print 'Elapsed Time: ' + str(time.clock() - start) + 's'
+        print('\r[++++++++++]')
+        print('Elapsed Time: ' + str(time.clock() - start) + 's')
         sys.stdout.flush()
 
     return list(reversed(A))
@@ -240,8 +240,8 @@ def mark_onsets(pcm,fs,onsets,debug=False,stereo=False):
                 else:
                     out[onset:onset+len(mark)] = mark
             except ValueError:
-                print onset
-                print onset + len(mark)
+                print(onset)
+                print(onset + len(mark))
     out = .2*pcm + .8*out
 
     return out.astype(np.int16)
@@ -326,11 +326,11 @@ def feature_logspectrogram(data,index,patch_size,normalize=False):
 
 # returns a local ReLU log-spectrogram feature centered at index in data
 def feature(data,index,patch_size,normalize=False):
-    patch = data[index-patch_size/2:index+patch_size/2]
+    patch = data[int(index-patch_size//2):int(index+patch_size//2)]
     assert(len(patch) == patch_size)
     
-    lfeat = np.abs(fft(patch[:,0]))[0:patch_size/2]
-    rfeat = np.abs(fft(patch[:,1]))[0:patch_size/2]
+    lfeat = np.abs(fft(patch[:,0]))[0:patch_size//2]
+    rfeat = np.abs(fft(patch[:,1]))[0:patch_size//2]
     
     lfeat = np.log(lfeat + .0001)
     rfeat = np.log(rfeat + .0001)
@@ -372,7 +372,7 @@ def batch_process(process, root, limit = 10000, filetype='.mid'):
             processed += 1
             if processed >= limit: return
     end = time.time()
-    print 'Finished processing in ' + str(end - start) + ' seconds.'
+    print('Finished processing in ' + str(end - start) + ' seconds.')
 
 def mark_notes(y,onsets,notes,mix_size=4096,fs=44100):
     out = np.zeros(y.shape)

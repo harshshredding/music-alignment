@@ -246,18 +246,17 @@ def mark_onsets(pcm,fs,onsets,debug=False,stereo=False):
 
     return out.astype(np.int16)
 
+# From the midi file 'filename', returns a list of tuples
+# (note, onset, offset) which is sorted by onset such that
+# the first tuple was the first note in music.
 def load_midi(filename):
     midi = MidiFile(filename)
 
     #print midi.tracks
-
-    midi_onsets = []
-    midi_notes = []
+    notes_onsets_offsets = []
     time = 0
-    k = 0
     for message in midi:
         time += message.time
-
         # velocity == 0 equivalent to note_off, see here:
         # http://www.kvraudio.com/forum/viewtopic.php?p=4167096
         if message.type == 'note_on' and message.velocity != 0:
@@ -265,14 +264,23 @@ def load_midi(filename):
             # but not intended to be played? (e.g. ravel)
             #if message.channel==0:
             #    continue
-            if midi_notes != [] and time == midi_onsets[-1]:
-                midi_notes[-1].append(message.note)
-            else:
-                midi_onsets.append(time)
-                midi_notes.append([message.note])
+            notes_onsets_offsets.append((message.note, time, -1))
+        elif (message.type == 'note_off') or (message.type == 'note_on' and message.velocity == 0):
+            # Find the last time this note was played and update that
+            # entry with offset.
+            for i, e in reversed(list(enumerate(notes_onsets_offsets))):
+                (note, onset, offset) = e
+                if note == message.note:
+                    notes_onsets_offsets[i] = (note, onset, time)
+                    break
+    # only keep the entries with have an offset
+    notes_onsets_offsets = [x for x in notes_onsets_offsets if not x[2] == -1]
+    # Make sure offset is always bigger than onset
+    for note, onset, offset in notes_onsets_offsets:    
+        assert onset <= offset
     assert time == midi.length
-
-    return np.array(midi_onsets),midi_notes
+    print("length of midi file" + str(midi.length))
+    return notes_onsets_offsets
 
 def playback(clip,num_loops=0,fs=44100,bitdepth=16,stereo=False):
     # the sound module requires data in C layout
@@ -384,4 +392,17 @@ def mark_notes(y,onsets,notes,mix_size=4096,fs=44100):
             sample = int(round(onset))
             if sample + len(mark) < len(out):
                 out[sample:sample+mix_size] += mark
+    return out
+
+def mark_notes_with_offsets(y, notes_onsets_offsets, mix_size=4096, fs=44100):
+    out = np.zeros(y.shape)
+    for note, onset, offset in notes_onsets_offsets:
+        freq = 440.*2**((note - 69.)/12.)
+        mark = 32000*np.sin(freq*2.*np.pi*np.arange(0,mix_size)/fs)
+        sample_onset = int(round(onset))
+        sample_offset = int(round(offset))
+        if sample_onset + len(mark) < len(out):
+            out[sample_onset:sample_onset+mix_size] += mark
+        if sample_offset + len(mark) < len(out):
+            out[sample_offset:sample_offset+mix_size] += mark
     return out

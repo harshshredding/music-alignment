@@ -255,7 +255,7 @@ def load_midi(filename):
     #print midi.tracks
     notes_onsets_offsets = []
     time = 0
-    for message in midi:
+    for i, message in enumerate(midi):
         time += message.time
         # velocity == 0 equivalent to note_off, see here:
         # http://www.kvraudio.com/forum/viewtopic.php?p=4167096
@@ -281,6 +281,87 @@ def load_midi(filename):
     assert time == midi.length
     print("length of midi file" + str(midi.length))
     return notes_onsets_offsets
+
+
+# From the midi file 'filename', returns a list of tuples
+# (note, onset, offset) which is sorted by onset such that
+# the first tuple was the first note in music.
+def load_midi_with_onset_index(filename):
+    midi = MidiFile(filename)
+
+    #print midi.tracks
+    notes_onsets_offsets = []
+    time = 0
+    for i, message in enumerate(midi):
+        time += message.time
+        # velocity == 0 equivalent to note_off, see here:
+        # http://www.kvraudio.com/forum/viewtopic.php?p=4167096
+        if message.type == 'note_on' and message.velocity != 0:
+            # some midis seem to have timing info on channel 0
+            # but not intended to be played? (e.g. ravel)
+            #if message.channel==0:
+            #    continue
+            notes_onsets_offsets.append((message.note, time, -1, i))
+        elif (message.type == 'note_off') or (message.type == 'note_on' and message.velocity == 0):
+            # Find the last time this note was played and update that
+            # entry with offset.
+            for i, e in reversed(list(enumerate(notes_onsets_offsets))):
+                (note, onset, offset, onset_index) = e
+                if note == message.note:
+                    notes_onsets_offsets[i] = (note, onset, time, onset_index)
+                    break
+    # only keep the entries with have an offset
+    notes_onsets_offsets = [x for x in notes_onsets_offsets if not x[2] == -1]
+    # Make sure offset is always bigger than onset
+    for note, onset, offset, onset_index in notes_onsets_offsets:    
+        assert onset <= offset
+    assert time == midi.length
+    print("length of midi file" + str(midi.length))
+    return notes_onsets_offsets
+
+
+# Find the seperation point between Fugue and Prelude
+def findSeperationPoint(filename):
+    notes_onsets_offsets_correct = load_midi_with_onset_index(filename)
+    onsets = []
+    for i, e in list(enumerate(notes_onsets_offsets_correct)):
+        onsets.append(e[1])
+    max_diff = 0
+    max_diff_index_1 = 0
+    max_diff_index_2 = 0
+    distinct_onsets = sorted(list(set(onsets)))
+    for i, onset in enumerate(distinct_onsets):
+        if (i + 1) <  len(distinct_onsets):
+            diff = distinct_onsets[i + 1] - distinct_onsets[i]
+            if diff > max_diff:
+                max_diff = diff
+                max_diff_index_1 = i
+                max_diff_index_2 = i + 1
+
+    print("maximum difference between onsets :", max_diff)
+    print("index_last_prelude_note", max_diff_index_1)
+    print("index_first_fugue_note", max_diff_index_2)
+    print("time_last_prelude_note", distinct_onsets[max_diff_index_1], "sec")
+    print("time_first_fugue_note", distinct_onsets[max_diff_index_2], "sec")
+    
+    csv_fugue_starting_index = 0
+    
+    for i, note_onset_offset_index in enumerate(notes_onsets_offsets_correct):
+        if note_onset_offset_index[1] == distinct_onsets[max_diff_index_2]:
+            print("message_index_first_fugue_note", note_onset_offset_index[3])
+            csv_fugue_starting_index = note_onset_offset_index[3]
+            break
+
+    midi = MidiFile(filename)
+    print(midi.length)
+    prelude_ending_time = (distinct_onsets[max_diff_index_1] + distinct_onsets[max_diff_index_2])/2
+    # If the seperation point between fugue and prelude is not at least 10 seconds from and beginning
+    # and 10 seconds from the end of the song, we have a problem.
+    if ((prelude_ending_time > 10) and (prelude_ending_time < midi.length - 10)):
+        print("Seperation point is at", prelude_ending_time, "sec")
+    else:
+        print("There is something weird about this piece. Please check whether either the fugue or prelude is absent.")
+    return (prelude_ending_time, csv_fugue_starting_index)
 
 def playback(clip,num_loops=0,fs=44100,bitdepth=16,stereo=False):
     # the sound module requires data in C layout

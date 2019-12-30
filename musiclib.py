@@ -7,6 +7,8 @@ import sys,time,os
 from IPython.display import display, Math, Latex
 from mido import MidiFile
 import pygame
+import glob
+import subprocess
 
 sentinel = object()
 def fft_desc(channel, window_size, stride=sentinel):
@@ -279,7 +281,6 @@ def load_midi(filename):
     for note, onset, offset in notes_onsets_offsets:    
         assert onset <= offset
     assert time == midi.length
-    print("length of midi file" + str(midi.length))
     return notes_onsets_offsets
 
 
@@ -321,6 +322,9 @@ def load_midi_with_onset_index(filename):
 
 
 # Find the seperation point between Fugue and Prelude
+# Return a tuple (audio_split, midi_split) where
+# audio_split : time when first note of fugue starts playing
+# midi_split : index of fugue start note in midi file
 def findSeperationPoint(filename):
     notes_onsets_offsets_correct = load_midi_with_onset_index(filename)
     onsets = []
@@ -346,6 +350,7 @@ def findSeperationPoint(filename):
     
     csv_fugue_starting_index = 0
     
+    # Find the index of the midi message which represents the start of the fugue
     for i, note_onset_offset_index in enumerate(notes_onsets_offsets_correct):
         if note_onset_offset_index[1] == distinct_onsets[max_diff_index_2]:
             print("message_index_first_fugue_note", note_onset_offset_index[3])
@@ -361,7 +366,7 @@ def findSeperationPoint(filename):
         print("Seperation point is at", prelude_ending_time, "sec")
     else:
         print("There is something weird about this piece. Please check whether either the fugue or prelude is absent.")
-    return (prelude_ending_time, csv_fugue_starting_index)
+    return (distinct_onsets[max_diff_index_2], csv_fugue_starting_index)
 
 def playback(clip,num_loops=0,fs=44100,bitdepth=16,stereo=False):
     # the sound module requires data in C layout
@@ -487,3 +492,68 @@ def mark_notes_with_offsets(y, notes_onsets_offsets, mix_size=4096, fs=44100):
         if sample_offset + len(mark) < len(out):
             out[sample_offset:sample_offset+mix_size] += mark
     return out
+
+# Make sure you have ./work folder present
+# 
+# Returns a map in which the key is the name of a musical piece.
+# The value is a map `m` which can have keys `score` and `maestro`
+# The `score` key contains kern related files
+# The `maestro` key contains a list of lists [p1 p2 p3 p4] where
+# each pi is a midi,wav pair.
+# Every piece is guranteed to have non empty `maestro` and `kern` maps.
+def get_piece_to_files_map():
+    piece_to_files = {}
+
+    # Map every piece to all related files
+    for filepath in glob.glob("./work/*_score.wav"):
+        filename = os.path.split(filepath)[1]
+        filename_without_extension, _ = os.path.splitext(filename)
+        piece = filename_without_extension[0:-6]
+        allfiles = glob.glob("./work/*")
+        relevant_files = list(filter(lambda file: piece in file, allfiles))
+        piece_to_files[piece] = relevant_files
+
+    # organize data such that we can access the kern files and maestro files easily
+    for piece in piece_to_files:
+        listOfFileLists = []
+        for file in list(filter(lambda f: not (('.csv' in f) or ('.krn' in f)), piece_to_files[piece])):
+            file_wo_ext, _ = os.path.splitext(file)
+            foundMatch = False
+            for i, listOfFiles in enumerate(listOfFileLists):
+                for f in listOfFiles:
+                    y, _ = os.path.splitext(f)
+                    if y == file_wo_ext:
+                        foundMatch = True
+                        listOfFiles.append(file)
+                        break
+                if foundMatch:
+                    break
+            if not foundMatch:
+                listOfFileLists.append([file])
+        categoryMap = {}
+        for fileList in listOfFileLists:
+            if any('score' in file for file in fileList):
+                categoryMap['kern'] = fileList
+            else:
+                maestro_performances = categoryMap.get('maestro', [])
+                maestro_performances.append(fileList)
+                categoryMap['maestro'] = maestro_performances
+        piece_to_files[piece] = categoryMap
+
+    # Check that every performance has two parts : midi and wav
+    for piece in piece_to_files:
+        maestro_performances = piece_to_files[piece].get('maestro', [])
+        for performance in maestro_performances:
+            assert len(performance) == 2
+
+    # If maestro performance exists, kern score files should exist
+    for piece in piece_to_files:
+        if 'maestro' in piece_to_files[piece]:
+            assert 'kern' in piece_to_files[piece]
+
+    # List all the pieces that don't have corresponding maestro data
+    for piece in list(piece_to_files):
+        if 'maestro' not in piece_to_files[piece]:
+            print(piece, piece_to_files[piece])
+            del piece_to_files[piece]
+    return piece_to_files

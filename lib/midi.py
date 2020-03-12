@@ -1,13 +1,23 @@
-from mido import MidiFile
+import numpy as np
+import mido
 
-# From the midi file 'filename', returns a list of tuples
-# (note, onset, offset) which is sorted by onset such that
-# the first tuple was the first note in music.
 def load_midi(filename):
-    midi = MidiFile(filename)
+    """
+        input: a midi file given by path 'filename'
 
-    #print midi.tracks
-    notes_onsets_offsets = []
+        returns symbolic midi data as a list of notes
+        each note note is a tuple consisting of:
+
+            pitch - integer in [0,127]
+            onset - real-valued time in seconds
+            offset - real-valued time in seconds
+
+        the list of notes is sorted by onset time
+    """
+
+    midi = mido.MidiFile(filename)
+
+    notes = []
     time = 0
     for message in midi:
         time += message.time
@@ -18,21 +28,98 @@ def load_midi(filename):
             # but not intended to be played? (e.g. ravel)
             #if message.channel==0:
             #    continue
-            notes_onsets_offsets.append((message.note, time, -1))
+            notes.append((message.note, time, -1))
         elif (message.type == 'note_off') or (message.type == 'note_on' and message.velocity == 0):
             # Find the last time this note was played and update that
             # entry with offset.
-            for i, e in reversed(list(enumerate(notes_onsets_offsets))):
+            for i, e in reversed(list(enumerate(notes))):
                 (note, onset, offset) = e
                 if note == message.note:
-                    notes_onsets_offsets[i] = (note, onset, time)
+                    notes[i] = (note, onset, time)
                     break
+
     # only keep the entries with have an offset
-    notes_onsets_offsets = [x for x in notes_onsets_offsets if not x[2] == -1]
-    # Make sure offset is always bigger than onset
-    for note, onset, offset in notes_onsets_offsets:
-        assert onset <= offset
+    notes = [x for x in notes if not x[2] == -1]
+    
+    # sanity checks
+    for note, onset, offset in notes: assert onset <= offset
     assert time == midi.length
-    print("length of midi file" + str(midi.length))
-    return notes_onsets_offsets
+
+    return notes, midi.ticks_per_beat
+
+
+def load_midi_events(filename):
+    """
+        input: a midi file given by path 'filename'
+ 
+        returns a sequence of "events" x in R^{T x 129} 
+        where T is the number of distinct temporal run-lengths in the midi
+        a slice of the event matrix x[i] is a vector in R^{129} where
+
+       	    x[0],dots,x[127] in {0,1}   (pitch indicator)
+            x[128] in R^+               (duration)
+
+        the first 128 elements are binary indicators of whether a pitch occurs in the run
+        the final element is a positive real time duration that encodes the length of the run
+    """
+    midi = mido.MidiFile(filename)
+
+    events = []
+    time = 0
+    cur_event = np.zeros(129)
+    for message in midi:
+        cur_event[-1] += message.time
+        if message.time != 0:
+            events.append(cur_event)
+            cur_event = np.copy(cur_event)
+            cur_event[-1] = 0 
+
+        if message.type == 'note_on' and message.velocity != 0:
+            cur_event[message.note] = 1
+        elif (message.type == 'note_off') or (message.type == 'note_on' and message.velocity == 0):
+            cur_event[message.note] = 0
+
+    return np.stack(events)
+
+
+def write_midi(filename, notes, tpb):
+    mid = mido.MidiFile(ticks_per_beat=tpb) # copy ticks_per_beat from source to avoid rounding errors
+    track = mido.MidiTrack()
+    mid.tracks.append(track)
+
+    tempo = mido.bpm2tempo(120)
+    track.append(mido.MetaMessage('set_tempo', tempo=tempo))
+    track.append(mido.MetaMessage('time_signature'))
+    track.append(mido.Message('program_change', program=0))
+
+    events = [(n[0], n[1], 'note_on') for n in notes]
+    events.extend([(n[0], n[2], 'note_off') for n in notes])
+    events = sorted(events, key = lambda n : n[1])
+
+    time = t0 = 0
+    for pitch,t1,eventtype in events:
+        time += t1 - t0
+        dt = mido.second2tick(t1 - t0,tpb,tempo)
+        message = mido.Message(eventtype, note=pitch, velocity=64, time=round(dt))
+        track.append(message)
+        t0 = t1
+
+    mid.save(filename)
+
+
+def split(notes):
+    """ heuristically find the split between the prelude and fugue in a midi file by finding a large gap """
+    distinct_onsets = sorted(list(set([n[1] for n in list(notes)])))
+    max_diff = max_index = 0
+    for i in range(len(distinct_onsets)-1):
+        diff = distinct_onsets[i+1] - distinct_onsets[i]
+        if diff > max_diff:
+            max_diff = diff
+            max_index = i
+
+    splitpoint = (distinct_onsets[max_index] + distinct_onsets[max_index+1])/2
+    if (splitpoint < 10) or (splitpoint > distinct_onsets[-1] - 10):
+        raise ValueError # sanity check failed
+
+    return splitpoint
 

@@ -1,3 +1,4 @@
+import torch
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.fftpack import fft,ifft
@@ -105,3 +106,14 @@ def mark_notes_with_offsets(y, notes_onsets_offsets, mix_size=4096, fs=44100):
         if sample_offset + len(mark) < len(out):
             out[sample_offset:sample_offset+mix_size] += mark
     return out
+
+def create_filters(d):
+    x = np.linspace(0, 2*np.pi, d, endpoint=False)
+    mask = 0.5-0.5*np.cos(x)
+    wsin = np.empty((128,d), dtype=np.float32)
+    wcos = np.empty((128,d), dtype=np.float32)
+    for i in range(128):
+        wsin[i,:] = mask*np.sin((d/44100.)*440.*2**((i-69)/12.)*x)
+        wcos[i,:] = mask*np.cos((d/44100.)*440.*2**((i-69)/12.)*x)
+
+    return torch.Tensor(wsin),torch.Tensor(wcos)

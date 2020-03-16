@@ -41,8 +41,7 @@ def plot_perf_alignment(sig1, sig2, alignment, stride=512, num_windows=None):
     """ plot an alignment of sig2 to sig1 """
     timings1 = np.cumsum(sig1[:,-1])
     timings2 = np.cumsum(sig2[:,-1])
-    print(timings1[-1],timings2[-1])
-    eps = 1e-8
+    eps = 1e-12
     
     if num_windows is None: num_windows = int(timings1[-1]*(44100/512.))
     
@@ -50,8 +49,8 @@ def plot_perf_alignment(sig1, sig2, alignment, stride=512, num_windows=None):
     y = np.zeros([num_windows,128])
     for i in range(num_windows):
         time = (i*stride)/44100.
-        k = np.argmin(time>=timings1-eps)
-        j = np.argmin(alignment[k]>=timings2-eps)
+        k = np.argmin(time>=timings1)
+        j = np.argmin(alignment[k]+eps>=timings2)
         
         y[i] = sig2[j,:128]
         x[i] = sig1[k,:128]
